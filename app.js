@@ -1,4 +1,4 @@
-const API_URL = 'http://localhost:3000';
+const API_URL = 'https://finpulse-sdjp.onrender.com';
 let allStocks = [];
 let priceChart = null;
 let compChart = null;
