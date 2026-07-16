@@ -1,33 +1,21 @@
 const API_URL = 'http://localhost:3000';
 let allStocks = [];
 let priceChart = null;
+let compChart = null;
 let checkedTickers = [];
 
 document.addEventListener('DOMContentLoaded', () => {
-    fetchMarketSummary();
     fetchStocks();
-
-    document.getElementById('search-bar').addEventListener('input', filterAndRenderData);
-    document.getElementById('pe-filter').addEventListener('input', filterAndRenderData);
-    document.getElementById('compare-trigger-btn').addEventListener('click', runComparisonAnalysis);
 });
-
-async function fetchMarketSummary() {
-    try {
-        const res = await fetch(`${API_URL}/market-summary`);
-        const summary = await res.json();
-        document.getElementById('total-count').innerText = `${summary.totalCompanies} Companies`;
-        document.getElementById('highest-stock').innerText = `${summary.highestPrice.ticker} (₹${summary.highestPrice.price})`;
-        document.getElementById('best-value-stock').innerText = `${summary.bestValue.ticker} (P/E: ${summary.bestValue.pe})`;
-    } catch (err) {
-        console.error("Summary fetch error:", err);
-    }
-}
 
 async function fetchStocks() {
     try {
         const res = await fetch(`${API_URL}/stocks`);
         allStocks = await res.json();
+        
+        // Sort stocks alphabetically by ticker
+        allStocks.sort((a, b) => a.ticker.localeCompare(b.ticker));
+
         renderTable(allStocks);
         
         if(allStocks.length > 0) {
@@ -44,8 +32,11 @@ function renderTable(stocks) {
 
     stocks.forEach(stock => {
         const row = document.createElement('tr');
+        
+        const isChecked = checkedTickers.includes(stock.ticker) ? 'checked' : '';
+
         row.innerHTML = `
-            <td onclick="event.stopPropagation()"><input type="checkbox" class="stock-checkbox" value="${stock.ticker}"></td>
+            <td onclick="event.stopPropagation()"><input type="checkbox" class="stock-checkbox" value="${stock.ticker}" ${isChecked}></td>
             <td><strong>${stock.ticker}</strong></td>
             <td>${stock.name}</td>
             <td>₹${stock.price.toFixed(2)}</td>
@@ -54,7 +45,7 @@ function renderTable(stocks) {
             <td>${stock.eps || 'N/A'}</td>
         `;
         
-        // Listen for checkbox changes to maintain a maximum list of 2 items
+        // Listen for checkbox changes
         const cb = row.querySelector('.stock-checkbox');
         cb.addEventListener('change', (e) => {
             if (e.target.checked) {
@@ -67,6 +58,13 @@ function renderTable(stocks) {
             } else {
                 checkedTickers = checkedTickers.filter(t => t !== stock.ticker);
             }
+
+            // Automatically trigger comparison or hide it based on selection count
+            if (checkedTickers.length === 2) {
+                runComparisonAnalysis();
+            } else {
+                document.getElementById('comparison-matrix').style.display = 'none';
+            }
         });
 
         row.addEventListener('click', () => loadStockChart(stock.ticker, stock.name));
@@ -74,25 +72,9 @@ function renderTable(stocks) {
     });
 }
 
-function filterAndRenderData() {
-    const searchQuery = document.getElementById('search-bar').value.toLowerCase();
-    const maxPE = parseFloat(document.getElementById('pe-filter').value);
-
-    const filtered = allStocks.filter(stock => {
-        const matchesSearch = stock.name.toLowerCase().includes(searchQuery) || stock.ticker.toLowerCase().includes(searchQuery);
-        const matchesPE = isNaN(maxPE) || (stock.pe_ratio && stock.pe_ratio <= maxPE);
-        return matchesSearch && matchesPE;
-    });
-
-    renderTable(filtered);
-}
-
-// 4. Comparative Engine: Overlay two datasets on the same Chart.js line graph
+// Comparative Engine: Overlay two datasets on the same Chart.js line graph
 async function runComparisonAnalysis() {
-    if (checkedTickers.length !== 2) {
-        alert("Please select exactly 2 companies using the checkbox to run a side-by-side comparison.");
-        return;
-    }
+    if (checkedTickers.length !== 2) return;
 
     try {
         const res1 = await fetch(`${API_URL}/stocks/${checkedTickers[0]}`);
@@ -101,35 +83,36 @@ async function runComparisonAnalysis() {
         const res2 = await fetch(`${API_URL}/stocks/${checkedTickers[1]}`);
         const stock2 = await res2.json();
 
+        // Show the Comparison Matrix section
+        document.getElementById('comparison-matrix').style.display = 'block';
+
         // Populate Matrix Text Fields
-        document.getElementById('compare-empty-msg').style.display = 'none';
-        document.getElementById('compare-data-box').style.display = 'block';
+        document.getElementById('compare-stock1-name').innerText = stock1.name;
+        document.getElementById('compare-stock2-name').innerText = stock2.name;
 
-        document.getElementById('comp-name-1').innerText = stock1.name;
-        document.getElementById('comp-price-1').innerText = `₹${stock1.price}`;
-        document.getElementById('comp-cap-1').innerText = stock1.market_cap;
-        document.getElementById('comp-pe-1').innerText = stock1.pe_ratio || 'N/A';
-        document.getElementById('comp-eps-1').innerText = stock1.eps || 'N/A';
+        document.getElementById('compare-price1').innerText = `₹${stock1.price.toFixed(2)}`;
+        document.getElementById('compare-price2').innerText = `₹${stock2.price.toFixed(2)}`;
 
-        document.getElementById('comp-name-2').innerText = stock2.name;
-        document.getElementById('comp-price-2').innerText = `₹${stock2.price}`;
-        document.getElementById('comp-cap-2').innerText = stock2.market_cap;
-        document.getElementById('comp-pe-2').innerText = stock2.pe_ratio || 'N/A';
-        document.getElementById('comp-eps-2').innerText = stock2.eps || 'N/A';
+        document.getElementById('compare-cap1').innerText = stock1.market_cap;
+        document.getElementById('compare-cap2').innerText = stock2.market_cap;
+
+        document.getElementById('compare-pe1').innerText = stock1.pe_ratio || 'N/A';
+        document.getElementById('compare-pe2').innerText = stock2.pe_ratio || 'N/A';
+
+        document.getElementById('compare-eps1').innerText = stock1.eps || 'N/A';
+        document.getElementById('compare-eps2').innerText = stock2.eps || 'N/A';
 
         // Render Combined Multi-Line Chart
-        document.getElementById('chart-title').innerText = `${stock1.ticker} vs ${stock2.ticker} Performance Comparison`;
-
         const dates = stock1.history.map(item => item.date);
         const prices1 = stock1.history.map(item => item.close_price);
         const prices2 = stock2.history.map(item => item.close_price);
 
-        if (priceChart) {
-            priceChart.destroy();
+        if (compChart) {
+            compChart.destroy();
         }
 
-        const ctx = document.getElementById('historyChart').getContext('2d');
-        priceChart = new Chart(ctx, {
+        const ctx = document.getElementById('comparisonChart').getContext('2d');
+        compChart = new Chart(ctx, {
             type: 'line',
             data: {
                 labels: dates,
@@ -157,7 +140,12 @@ async function runComparisonAnalysis() {
             options: {
                 responsive: true,
                 scales: {
-                    x: { display: false }
+                    x: { 
+                        display: true,
+                        ticks: {
+                            maxTicksLimit: 12 // Limits x-axis to roughly 12 labels (months)
+                        }
+                    }
                 }
             }
         });
@@ -199,7 +187,12 @@ async function loadStockChart(ticker, companyName) {
             options: {
                 responsive: true,
                 scales: {
-                    x: { display: false }
+                    x: { 
+                        display: true,
+                        ticks: {
+                            maxTicksLimit: 12 // Limits x-axis to roughly 12 labels (months)
+                        }
+                    }
                 }
             }
         });

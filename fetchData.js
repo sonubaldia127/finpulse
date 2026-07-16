@@ -2,8 +2,10 @@ require('dotenv').config();
 const { createClient } = require('@supabase/supabase-js');
 const YahooFinance = require('yahoo-finance2').default;
 
-// Instantiate the new YahooFinance class required by v3+ / v4
-const yahooFinance = new YahooFinance();
+// Instantiate YahooFinance with notice suppression directly in the constructor
+const yahooFinance = new YahooFinance({
+    suppressNotices: ['yahooSurvey', 'ripHistorical']
+});
 
 // Initialize Supabase client
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
@@ -58,24 +60,26 @@ async function syncRealData() {
             });
             if (stockErr) throw stockErr;
 
-            // 2. Fetch genuine 1-Year daily historical data
-            const historicalData = await yahooFinance.historical(ticker, {
+            // 2. Fetch genuine 1-Year daily historical data using chart()
+            const chartData = await yahooFinance.chart(ticker, {
                 period1: formatDate(oneYearAgo),
                 period2: formatDate(today),
                 interval: '1d'
             });
 
-            if (!historicalData || historicalData.length === 0) {
+            const quotes = chartData.quotes || [];
+
+            if (quotes.length === 0) {
                 console.log(`⚠ No historical data available for ${ticker}`);
                 continue;
             }
 
-            // Map Yahoo's data into database rows
-            const priceRows = historicalData
-                .filter(day => day.close !== null && day.close !== undefined)
+            // Map and safely filter out quotes where 'close' or 'date' is missing/null
+            const priceRows = quotes
+                .filter(day => day && day.date && day.close !== null && day.close !== undefined)
                 .map(day => ({
                     ticker,
-                    date: day.date.toISOString().split('T')[0],
+                    date: day.date instanceof Date ? day.date.toISOString().split('T')[0] : new Date(day.date).toISOString().split('T')[0],
                     close_price: Number(day.close.toFixed(2))
                 }));
 
