@@ -9,9 +9,14 @@ const PORT = process.env.PORT || 3000;
 // Connect to your online Supabase database
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
 
-// Allow frontend communication
+// Allow frontend communication across different domains (Vercel to Render)
 app.use(cors());
 app.use(express.json());
+
+// Root Endpoint: Health check for Render
+app.get('/', (req, res) => {
+    res.send('FinPulse API is running successfully!');
+});
 
 // Endpoint 1: Fetch fundamental metrics for all 20 companies
 app.get('/stocks', async (req, res) => {
@@ -49,6 +54,11 @@ app.get('/market-summary', async (req, res) => {
         const { data: stocks, error } = await supabase.from('stocks').select('*');
         if (error) throw error;
 
+        // Guard clause in case the database is empty
+        if (!stocks || stocks.length === 0) {
+            return res.json({ totalCompanies: 0 });
+        }
+
         // Basic backend mathematical analytics for dashboard cards
         const totalCompanies = stocks.length;
         const highestPriceStock = stocks.reduce((max, s) => s.price > max.price ? s : max, stocks[0]);
@@ -66,5 +76,5 @@ app.get('/market-summary', async (req, res) => {
 
 // Start listening for network requests
 app.listen(PORT, () => {
-    console.log(`Server successfully active on http://localhost:${PORT}`);
+    console.log(`Server successfully active on port ${PORT}`);
 });
